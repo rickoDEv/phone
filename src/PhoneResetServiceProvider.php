@@ -14,7 +14,10 @@ class PhoneResetServiceProvider extends ServiceProvider implements DeferrablePro
     {
 
         if ($this->app->runningInConsole()) {
-            $this->publishesMigrations([
+            
+            $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+
+            $this->publishes([
                 __DIR__.'/../database/migrations' => database_path('migrations'),
             ], 'phone-reset-migrations');
 
