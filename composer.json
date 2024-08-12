@@ -1,0 +1,54 @@
+{
+    "name": "rickodev/phone-reset",
+    "description": "Use phone number to reset passwor",
+    "keywords": [
+        "rickodev",
+        "phone-reset"
+    ],
+    "homepage": "https://github.com/rickodev/phone-reset",
+    "license": "MIT",
+    "type": "library",
+    "authors": [
+        {
+            "name": "Moses Mwangi",
+            "email": "author@domain.com",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^7.4|^8.0|^8.2",
+        "illuminate/support": "^9.0|^10.0|^11.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^6.0",
+        "phpunit/phpunit": "^9.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "RickoDev\\PhoneReset\\": "src"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "RickoDev\\PhoneReset\\Tests\\": "tests"
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/phpunit",
+        "test-coverage": "vendor/bin/phpunit --coverage-html coverage"
+
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "RickoDev\\PhoneReset\\PhoneResetServiceProvider"
+            ],
+            "aliases": {
+                "PhoneReset": "RickoDev\\PhoneReset\\PhoneResetFacade"
+            }
+        }
+    }
+}

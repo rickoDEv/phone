@@ -1,0 +1,200 @@
+<?php
+
+namespace RickoDev\PhoneReset;
+
+use RickoDev\PhoneReset\Contracts\PhoneTokenRepositoryInterface;
+use Closure;
+use Illuminate\Auth\Events\PasswordResetLinkSent;
+use RickoDev\PhoneReset\Contracts\CanResetPhonePassword as CanResetPasswordContract;
+use RickoDev\PhoneReset\Contracts\PhonePasswordBroker as PasswordBrokerContract;
+use Illuminate\Contracts\Auth\UserProvider;
+use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Support\Arr;
+use UnexpectedValueException;
+
+class PhonePasswordBroker implements PasswordBrokerContract
+{
+    /**
+     * The password token repository.
+     *
+     * @var PhoneTokenRepositoryInterface
+     */
+    protected $tokens;
+
+    /**
+     * The user provider implementation.
+     *
+     * @var \Illuminate\Contracts\Auth\UserProvider
+     */
+    protected $users;
+
+    /**
+     * The event dispatcher instance.
+     *
+     * @var \Illuminate\Contracts\Events\Dispatcher
+     */
+    protected $events;
+
+    /**
+     * Create a new password broker instance.
+     *
+     * @param PhoneTokenRepositoryInterface $tokens
+     * @param UserProvider $users
+     * @param Dispatcher|null $dispatcher
+     */
+    public function __construct(#[\SensitiveParameter] PhoneTokenRepositoryInterface $tokens, UserProvider $users, ?Dispatcher $dispatcher = null)
+    {
+        $this->users = $users;
+        $this->tokens = $tokens;
+        $this->events = $dispatcher;
+    }
+
+    /**
+     * Send a password reset link to a user.
+     *
+     * @param  array  $credentials
+     * @param  \Closure|null  $callback
+     * @return string
+     */
+    public function sendResetLink(#[\SensitiveParameter] array $credentials, ?Closure $callback = null)
+    {
+        // First we will check to see if we found a user at the given credentials and
+        // if we did not we will redirect back to this current URI with a piece of
+        // "flash" data in the session to indicate to the developers the errors.
+        $user = $this->getUser($credentials);
+
+        if (is_null($user)) {
+            return static::INVALID_USER;
+        }
+
+        if ($this->tokens->recentlyCreatedToken($user)) {
+            return static::RESET_THROTTLED;
+        }
+
+        [$token,$otp] = $this->tokens->create($user);
+
+        if ($callback) {
+            return $callback($user, $token,$otp) ?? static::RESET_LINK_SENT;
+        }
+
+
+        return static::RESET_LINK_SENT;
+    }
+
+    /**
+     * Reset the password for the given token.
+     *
+     * @param  array  $credentials
+     * @param  \Closure  $callback
+     * @return mixed
+     */
+    public function reset(#[\SensitiveParameter] array $credentials, Closure $callback)
+    {
+        $user = $this->validateReset($credentials);
+
+        // If the responses from the validate method is not a user instance, we will
+        // assume that it is a redirect and simply return it from this method and
+        // the user is properly redirected having an error message on the post.
+        if (! $user instanceof CanResetPasswordContract) {
+            return $user;
+        }
+
+        $password = $credentials['password'];
+
+        // Once the reset has been validated, we'll call the given callback with the
+        // new password. This gives the user an opportunity to store the password
+        // in their persistent storage. Then we'll delete the token and return.
+        $callback($user, $password);
+
+        $this->tokens->delete($user);
+
+        return static::PASSWORD_RESET;
+    }
+
+    /**
+     * Validate a password reset for the given credentials.
+     *
+     * @param array $credentials
+     * @return CanResetPasswordContract|string|null
+     */
+    protected function validateReset(#[\SensitiveParameter] array $credentials): CanResetPasswordContract|string|null
+    {
+
+        if (is_null($user = $this->getUser($credentials))) {
+
+
+            return static::INVALID_USER;
+        }
+
+        if (! $this->tokens->exists($user, $credentials['token'],$credentials['otp'])) {
+            return static::INVALID_TOKEN;
+        }
+
+        return $user;
+    }
+
+    /**
+     * Get the user for the given credentials.
+     *
+     * @param  array  $credentials
+     * @return CanResetPasswordContract|null
+     *
+     * @throws \UnexpectedValueException
+     */
+    public function getUser(#[\SensitiveParameter] array $credentials)
+    {
+        $credentials = Arr::except($credentials, ['token','otp']);
+
+        $user = $this->users->retrieveByCredentials($credentials);
+
+        if ($user && ! $user instanceof CanResetPasswordContract) {
+            throw new UnexpectedValueException('User must implement CanResetPhonePassword interface.');
+        }
+
+        return $user;
+    }
+
+    /**
+     * Create a new password reset token for the given user.
+     *
+     * @param  CanResetPasswordContract $user
+     * @return array
+     */
+    public function createToken(CanResetPasswordContract $user)
+    {
+        return $this->tokens->create($user);
+    }
+
+    /**
+     * Delete password reset tokens of the given user.
+     *
+     * @param  CanResetPasswordContract $user
+     * @return void
+     */
+    public function deleteToken(CanResetPasswordContract $user)
+    {
+        $this->tokens->delete($user);
+    }
+
+    /**
+     * Validate the given password reset token.
+     *
+     * @param  CanResetPasswordContract $user
+     * @param  string  $token
+     * @return bool
+     */
+    public function tokenExists(CanResetPasswordContract $user, #[\SensitiveParameter] $token, #[\SensitiveParameter] $otp)
+    {
+        return $this->tokens->exists($user, $token,$otp);
+    }
+
+    /**
+     * Get the password reset token repository implementation.
+     *
+     * @return PhoneTokenRepositoryInterface
+     */
+    public function getRepository()
+    {
+        return $this->tokens;
+    }
+}
